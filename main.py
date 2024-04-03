@@ -1,8 +1,8 @@
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy import create_engine, Column, Integer, String, Date
+from fastapi import FastAPI, Depends, HTTPException, Query
+from sqlalchemy import create_engine, Column, Integer, String, Date, extract
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from datetime import date
+from datetime import date, timedelta  # Додано timedelta до імпортів
 from pydantic import BaseModel
 
 # SQLAlchemy models
@@ -47,7 +47,7 @@ class Contact(ContactBase):
     id: int
 
     class Config:
-        from_attributes = True  # Змінили ключ конфігурації з orm_mode на from_attributes
+        from_attributes = True
 
 
 # FastAPI app
@@ -106,3 +106,25 @@ def delete_contact(contact_id: int, db: Session = Depends(get_db)):
     db.delete(db_contact)
     db.commit()
     return db_contact
+
+
+@app.get("/contacts/search/", response_model=List[Contact])
+def search_contacts(query: str = Query(None, min_length=3), db: Session = Depends(get_db)):
+    if query is None:
+        return []
+    return db.query(Contact).filter(
+        (Contact.first_name.ilike(f"%{query}%")) |
+        (Contact.last_name.ilike(f"%{query}%")) |
+        (Contact.email.ilike(f"%{query}%"))
+    ).all()
+
+
+@app.get("/contacts/birthdays/", response_model=List[Contact])
+def upcoming_birthdays(db: Session = Depends(get_db)):
+    today = date.today()
+    end_date = today + timedelta(days=7)
+    return db.query(Contact).filter(
+        (extract('month', Contact.birthday) == today.month) &
+        (extract('day', Contact.birthday) >= today.day) &
+        (extract('day', Contact.birthday) <= end_date.day)
+    ).all()
